@@ -27,7 +27,7 @@ def environment_and_source_example():
     )
 
     print("DataStream created from collection.")
-    print("Stream Type Information:", data_stream.get_type_info())
+    print("Stream Type Information:", data_stream.get_type())
 
     # 3. Define a Sink (where the data goes)
     # .print() is a simple sink that prints each element to the console.

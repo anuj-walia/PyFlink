@@ -1,9 +1,14 @@
-from pyflink.common import Types, WatermarkStrategy, Time, Duration, OutputTag
+from pyflink.common import Types, WatermarkStrategy, Time, Duration
+# Correct the import path for OutputTag
+
+from pyflink.datastream.output_tag import OutputTag
 from pyflink.common.watermark_strategy import TimestampAssigner
+# You might need ReduceFunction if you change .sum(1) later like in previous examples
+from pyflink.datastream.functions import ReduceFunction
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.window import TumblingEventTimeWindows
 
-
+# ... rest of the code ...
 
 """
 **3. Handling Late Data (`handling_late_data.py`)**
@@ -21,6 +26,12 @@ class SimpleTimestampAssigner(TimestampAssigner):
     def extract_timestamp(self, element, record_timestamp):
         # Element: (key, value, timestamp_millis)
         return element[2]
+
+# Define a simple ReduceFunction for summing the values (index 1) if needed
+# This is here in case you replace .sum(1) later
+class SumReducer(ReduceFunction):
+    def reduce(self, v1, v2):
+        return (v1[0], v1[1] + v2[1], v1[2]) # Keep key and timestamp from v1
 
 def handling_late_data_example():
     """
@@ -79,9 +90,11 @@ def handling_late_data_example():
     )
 
     # *** Specify the side output for late data BEFORE the aggregation ***
-    aggregated_stream = windowed_stream \
-        .side_output_late_data(late_data_tag) \
-        .sum(1) # Sum values (index 1) for non-late data
+    # NOTE: Like the previous example, .sum(1) might cause an AttributeError here too.
+    # If it does, replace .sum(1) with .reduce(SumReducer())
+    aggregated_stream = windowed_stream.side_output_late_data(late_data_tag).reduce(SumReducer())
+        # # .sum(1) # Sum values (index 1) for non-late data
+        # .reduce(SumReducer()) # Use this if .sum(1) fails
 
     print(f"Defined Tumbling Event Time Window ({window_size_seconds}s) with side output for late data.")
 

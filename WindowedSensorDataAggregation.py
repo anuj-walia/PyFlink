@@ -1,6 +1,8 @@
+import time # Import the time module
 from pyflink.common import Types
 from pyflink.datastream import StreamExecutionEnvironment, RuntimeExecutionMode
 from pyflink.datastream.window import TumblingProcessingTimeWindows, Time
+from pyflink.datastream.functions import ReduceFunction, MapFunction
 
 
 """
@@ -13,12 +15,30 @@ _(Note: For the windowing example, the output timing depends heavily on how quic
 
 
 """
+class SumReducer(ReduceFunction):
+    def reduce(self, v1, v2):
+        # v1: The current accumulated value (or the first element)
+        # v2: The next element to incorporate
+        # Output: A new accumulated value (must be the same type as input)
+        # Keep the key from the first element and sum the integer value (index 1).
+        # print(type(v1))
+        # print(v1)
+        # print(type(v2))
+        # print(v2)
+        return (v1[0],v1[1]+ v2[1]) # Keep key and timestamp from v1 for simplicity
 
+# Add a simple MapFunction to introduce a delay
+class DelayMap(MapFunction):
+    def map(self, value):
+        # Add a small delay to simulate slower data arrival
+        time.sleep(1) # Sleep for 1 second per element
+        return value
 
 def windowing_example():
     """
     Demonstrates windowing: grouping data into finite chunks (windows) based on time
     and performing aggregations per window.
+    Includes an artificial delay to allow processing time windows to trigger with finite source.
     """
     env = StreamExecutionEnvironment.get_execution_environment()
     env.set_runtime_mode(RuntimeExecutionMode.STREAMING)
@@ -28,14 +48,20 @@ def windowing_example():
     # Source: A stream of (sensor_id, value) tuples.
     # We'll use processing time, so the arrival time at Flink matters.
     # In a real scenario, you might inject delays or use event time timestamps.
-    data_stream = env.from_collection(
+    data_stream_raw = env.from_collection(
         collection=[
-            ('sensor_1', 10), ('sensor_2', 25), ('sensor_1', 12), # Window 1 likely
-            ('sensor_1', 15), ('sensor_2', 30), ('sensor_2', 35), # Window 2 likely
-            ('sensor_1', 11),                                    # Window 3 likely
+            ('sensor_1', 10), ('sensor_2', 25), ('sensor_1', 12), # Elements 0, 1, 2
+            ('sensor_1', 15), ('sensor_2', 30), ('sensor_2', 35), # Elements 3, 4, 5
+            ('sensor_1', 11),                                    # Element 6
         ],
         type_info=Types.TUPLE([Types.STRING(), Types.INT()])
     )
+
+    # Introduce an artificial delay using map BEFORE key_by and windowing
+    # This will make the source effectively take ~7 seconds to emit all data
+    data_stream = data_stream_raw.map(DelayMap(), output_type=Types.TUPLE([Types.STRING(), Types.INT()]))
+    print("Applied artificial delay via map function.")
+
 
     # 1. KeyBy Transformation (Group by sensor ID)
     # Windows are usually applied on keyed streams to compute results per key per window.
@@ -54,8 +80,10 @@ def windowing_example():
     # 3. Aggregation within Window
     # Apply an aggregation (e.g., sum) to the elements within each window for each key.
     # The result is emitted only when the window closes (after 5 seconds of processing time).
-    window_sum_stream = windowed_stream.sum(1) # Sum the value (index 1) per sensor_id per window
-    print("Applied 'sum' aggregation within each window.")
+
+    window_sum_stream = windowed_stream.reduce(SumReducer())
+    # Sum the value (index 1) per sensor_id per window
+    print("Applied 'reduce' aggregation within each window.") # Changed from 'sum' to 'reduce' for clarity
 
     # Sink: Print the window results
     # This will print the final sum for each key when its window closes.
@@ -67,7 +95,7 @@ def windowing_example():
     print(f"\nExecuting Flink job: {job_name} (will run until manually stopped or finishes source)")
     # Note: Processing time windows depend on when data arrives. Run might need a few seconds.
     env.execute(job_name)
-    print("Job execution finished.") # May only appear if the source is finite and finishes quickly
+    print("Job execution finished.") # Will appear after source finishes and windows close
 
 
 if __name__ == '__main__':
